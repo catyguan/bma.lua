@@ -1,0 +1,10 @@
+
+/.metadata
+*/.classpath
+*/.project
+*/.settings
+*/target
+luajni/Debug
+/luajni/luajni.vcproj.GUANZHONG.whyh.user
+/luajni/luajni.ncb
+/luajni/luajni.sln
