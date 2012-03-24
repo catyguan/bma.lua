@@ -13,17 +13,15 @@
 /* Defines the lua JavaObject flag */
 #define LUAJAVAOBJECTIND		"__JAVA_OBJECT"
 
-static lua_State * getStateFromJObj( JNIEnv * env , jobject cptr );
+static lua_State * getStateFromJObj( JNIEnv * env , jlong cptr );
 
 static void pushJNIEnv( JNIEnv * env , lua_State * L );
 
 static JNIEnv * getEnvFromState( lua_State * L );
 
-static jclass    cls_NativeData				= NULL;
-static jfieldID  fid_NativeData__type		= NULL;
-static jfieldID  fid_NativeData__data		= NULL;
-static jfieldID  fid_NativeData__destroy	= NULL;
-static jmethodID get_message_method			= NULL;
+static jclass    cls_LuaState				= NULL;
+static jmethodID mid_LuaState__function		= NULL;
+static jmethodID mid_LuaState__loader		= NULL;
 
 static jclass    cls_Number					= NULL;
 static jmethodID mid_Number__intValue		= NULL;
@@ -32,23 +30,18 @@ static jmethodID mid_Number__doubleValue	= NULL;
 static jclass    cls_Integer				= NULL;
 static jmethodID mid_Integer__c				= NULL;
 
+static jclass    cls_Long					= NULL;
+static jmethodID mid_Long__c				= NULL;
+
 static jclass    cls_Double					= NULL;
 static jmethodID mid_Double__c				= NULL;
-
-static jclass    cls_LuaState				= NULL;
-static jmethodID mid_LuaState__function		= NULL;
-static jmethodID mid_LuaState__loader		= NULL;
 
 static jclass	 cls_Exception				= NULL;
 static jmethodID mid_Exception__getMessage	= NULL;
 
 void initJNICache(JNIEnv* env)
 {
-	if(cls_NativeData)return;
-	cls_NativeData = ( *env )->FindClass( env , "bma/lua/javalib/LuaState$NativeData" );	
-	fid_NativeData__type = ( *env )->GetFieldID( env , cls_NativeData , "type", "I" );
-	fid_NativeData__data = ( *env )->GetFieldID( env , cls_NativeData , "data", "J" );
-	fid_NativeData__destroy = ( *env )->GetFieldID( env , cls_NativeData , "destroy", "J" );
+	if(cls_LuaState)return;
 
 	cls_Number = ( *env )->FindClass( env , "java/lang/Number" );
 	mid_Number__intValue = ( *env )->GetMethodID( env , cls_Number, "intValue" , "()I" );
@@ -66,6 +59,9 @@ void initJNICache(JNIEnv* env)
 
 	cls_Integer = ( *env )->FindClass( env , "java/lang/Integer" );
 	mid_Integer__c = ( *env )->GetMethodID( env , cls_Integer, "<init>" , "(I)V" );
+
+	cls_Long = ( *env )->FindClass( env , "java/lang/Long" );
+	mid_Long__c = ( *env )->GetMethodID( env , cls_Long, "<init>" , "(J)V" );
 
 }
 
@@ -101,20 +97,6 @@ int getLuaStateId(lua_State* L) {
 	r = lua_tointeger( L , -1 );
 	lua_pop(L,1);
 	return r;
-}
-
-jobject newNativeObject( JNIEnv * env ,  jint type, jlong data, jlong destroy)
-{
-	jobject obj;
-	obj = ( *env )->AllocObject( env , cls_NativeData );
-	if ( !obj )
-	{
-		return obj;
-	}
-	( *env )->SetIntField( env , obj , fid_NativeData__type , type );  
-	( *env )->SetLongField( env , obj , fid_NativeData__data , data );  
-	( *env )->SetLongField( env , obj , fid_NativeData__destroy , destroy );  
-	return obj;
 }
 
 int javaInt(JNIEnv* env, jobject p1,int def) {
@@ -246,10 +228,9 @@ static const char* java_function_loader(lua_State *L, void *ud, size_t *size) {
 *  Function: getStateFromJObj
 *  ****/
 
-lua_State * getStateFromJObj( JNIEnv * env , jobject cptr )
+lua_State * getStateFromJObj( JNIEnv * env , jlong cptr )
 {
-	jbyte * peer  = ( jbyte * ) ( *env )->GetLongField( env , cptr , fid_NativeData__data);
-	return ( lua_State * ) peer;
+	return ( lua_State * ) cptr;
 }
 
 /***************************************************************************
@@ -336,7 +317,7 @@ static void clockHook(lua_State *L, lua_Debug *ar) {
 }
 
 JNIEXPORT void JNICALL Java_bma_lua_javalib_LuaState__1timeout
-  (JNIEnv * env, jobject jThis, jobject jobj, jboolean begin, jint timeout)
+  (JNIEnv * env, jobject jThis, jlong jobj, jboolean begin, jint timeout)
 {
 	clock_t* ptr;
 	lua_State* L = getStateFromJObj( env , jobj);
@@ -358,19 +339,13 @@ JNIEXPORT void JNICALL Java_bma_lua_javalib_LuaState__1timeout
 *   JNI Called function
 ************************************************************************/
 
-JNIEXPORT jobject JNICALL Java_bma_lua_javalib_LuaState__1open
+JNIEXPORT jlong JNICALL Java_bma_lua_javalib_LuaState__1open
   (JNIEnv * env , jobject jobj, jint stateId)
 {
 	lua_State * L = NULL;
-	jobject obj = NULL;
 
 	initJNICache(env);
 	L = luaL_newstate();
-	obj = newNativeObject(env,0,(jlong) L,1);	
-	if ( !obj )
-	{
-		return obj;
-	}
  
 	lua_pushstring( L , LUAJAVASTATEINDEX );
 	lua_pushnumber( L , (lua_Number)stateId );
@@ -378,11 +353,11 @@ JNIEXPORT jobject JNICALL Java_bma_lua_javalib_LuaState__1open
 
 	pushJNIEnv(env, L);   
 
-	return obj;
+	return (jlong) L;
 }
 
 JNIEXPORT void JNICALL Java_bma_lua_javalib_LuaState__1destroy
-  (JNIEnv * env, jclass cls, jlong data, jint type, jlong ptr)
+  (JNIEnv * env, jclass cls, jlong data, jint type, jlong ctx)
 {	
 	if(type==0) {
 		// lua_State* L;
@@ -394,7 +369,7 @@ JNIEXPORT void JNICALL Java_bma_lua_javalib_LuaState__1destroy
 }
 
 JNIEXPORT void JNICALL Java_bma_lua_javalib_LuaState__1close
-  (JNIEnv * env , jobject jobj , jobject cptr)
+  (JNIEnv * env , jobject jobj , jlong cptr)
 {
 	lua_State * L = getStateFromJObj( env , cptr );
 
@@ -402,7 +377,7 @@ JNIEXPORT void JNICALL Java_bma_lua_javalib_LuaState__1close
 }
 
 JNIEXPORT jint JNICALL Java_bma_lua_javalib_LuaState__1apiX
-   (JNIEnv * env, jobject jThis, jobject data, jint type, jint p1, jint p2, jint p3) {
+   (JNIEnv * env, jobject jThis, jlong data, jint type, jint p1, jint p2, jint p3) {
 	
 	lua_State * L = getStateFromJObj( env , data );	
 	switch(type) {
@@ -529,7 +504,7 @@ JNIEXPORT jint JNICALL Java_bma_lua_javalib_LuaState__1apiX
 }
 
 JNIEXPORT jobject JNICALL Java_bma_lua_javalib_LuaState__1xapi
-  (JNIEnv * env, jobject jThis, jobject data, jint api, jobject p1, jobject p2, jobject p3)
+  (JNIEnv * env, jobject jThis, jlong data, jint api, jobject p1, jobject p2, jobject p3)
 {
 	lua_State * L = getStateFromJObj( env , data );	
 	switch(api) {
@@ -603,8 +578,8 @@ JNIEXPORT jobject JNICALL Java_bma_lua_javalib_LuaState__1xapi
 			void* data = lua_touserdata(L,i);
 			if(data==NULL) {
 				return NULL;
-			}
-			return newNativeObject(env,1,(jlong) data,0);
+			}			
+			return ( *env) ->NewObject(env,cls_Long,mid_Long__c,(jlong) data);
 		}
 	case 52:
 		{

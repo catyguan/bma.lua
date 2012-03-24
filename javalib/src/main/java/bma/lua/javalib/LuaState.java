@@ -44,65 +44,19 @@ public class LuaState implements LuaConst {
 		System.loadLibrary(LUAJAVA_LIB);
 	}
 
-	public static class NativeData {
-
-		private long data;
-		private int type;
-		private long destroy;
-
-		public boolean equals(Object other) {
-			if (other == null)
-				return false;
-			if (other == this)
-				return true;
-			if (NativeData.class != other.getClass())
-				return false;
-			return data == ((NativeData) other).data;
-		}
-
-		public long getData() {
-			return data;
-		}
-
-		public int getType() {
-			return type;
-		}
-
-		protected void close() {
-			destroy = data = type = 0;
-		}
-
-		@Override
-		public String toString() {
-			return type + ":0x" + Long.toHexString(data);
-		}
-
-		@Override
-		protected void finalize() throws Throwable {
-			if (this.destroy != 0) {
-				_destroy(data, type, destroy);
-				destroy = data = type = 0;
-			}
-			super.finalize();
-		}
-
-	}
-
 	/********************* Lua Native Interface *************************/
-	private native NativeData _open(int stateId);
+	private native long _open(int stateId);
 
-	private static native void _destroy(long data, int type, long destroy);
+	private static native void _destroy(long data, int type, long ctx);
 
-	private native void _close(NativeData ptr);
+	private native void _close(long ptr);
 
-	private native int _apiX(NativeData luaState, int api, int p1, int p2,
-			int p3);
+	private native int _apiX(long luaState, int api, int p1, int p2, int p3);
 
-	private native Object _xapi(NativeData luaState, int api, Object p1,
-			Object p2, Object p3);
+	private native Object _xapi(long luaState, int api, Object p1, Object p2,
+			Object p3);
 
-	private native void _timeout(NativeData luaState, boolean begin,
-			int timeoutSec);
+	private native void _timeout(long luaState, boolean begin, int timeoutSec);
 
 	private static int c_function(int stateId, Object obj) {
 		try {
@@ -144,7 +98,7 @@ public class LuaState implements LuaConst {
 
 	/********************* end Lua Native Interface *********************/
 
-	private NativeData luaState;
+	private long luaState;
 
 	private int stateId;
 
@@ -163,32 +117,23 @@ public class LuaState implements LuaConst {
 	 * Closes state and removes the object from the LuaStateFactory
 	 */
 	public void close() {
-		if (this.luaState != null) {
+		if (this.luaState != 0) {
 			LuaStateManager.removeState(stateId);
 			_close(luaState);
-			this.luaState = null;
+			this.luaState = 0;
 		}
 	}
 
 	@Override
 	public String toString() {
-		return "LuaState[" + stateId + "," + luaState + "]";
+		return "LuaState[" + stateId + ",0x" + Long.toHexString(luaState) + "]";
 	}
 
 	/**
 	 * Returns <code>true</code> if state is closed.
 	 */
 	public boolean isOpen() {
-		return luaState != null;
-	}
-
-	/**
-	 * Return the long representing the LuaState pointer
-	 * 
-	 * @return long
-	 */
-	public long getNativePtr() {
-		return (luaState != null) ? luaState.getData() : 0;
+		return luaState != 0;
 	}
 
 	// ***************** API *************************
@@ -488,15 +433,15 @@ public class LuaState implements LuaConst {
 		return v.toString();
 	}
 
-	public NativeData luaTouserdata(int index) {
+	public long luaTouserdata(int index) {
 		// 50
 		Object v = _xapi(luaState, 50, index, null, null);
 		if (v == null)
-			return null;
-		if (v instanceof NativeData) {
-			return (NativeData) v;
+			return 0;
+		if (v instanceof Long) {
+			return (Long) v;
 		}
-		return null;
+		return 0;
 	}
 
 	public int luaType(int index) {

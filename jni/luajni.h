@@ -10,9 +10,9 @@ extern "C" {
 /*
  * Class:     bma_lua_javalib_LuaState
  * Method:    _open
- * Signature: (I)Lbma/lua/javalib/LuaState/NativeData;
+ * Signature: (I)J
  */
-JNIEXPORT jobject JNICALL Java_bma_lua_javalib_LuaState__1open
+JNIEXPORT jlong JNICALL Java_bma_lua_javalib_LuaState__1open
   (JNIEnv *, jobject, jint);
 
 /*
@@ -26,34 +26,34 @@ JNIEXPORT void JNICALL Java_bma_lua_javalib_LuaState__1destroy
 /*
  * Class:     bma_lua_javalib_LuaState
  * Method:    _close
- * Signature: (Lbma/lua/javalib/LuaState/NativeData;)V
+ * Signature: (J)V
  */
 JNIEXPORT void JNICALL Java_bma_lua_javalib_LuaState__1close
-  (JNIEnv *, jobject, jobject);
+  (JNIEnv *, jobject, jlong);
 
 /*
  * Class:     bma_lua_javalib_LuaState
  * Method:    _apiX
- * Signature: (Lbma/lua/javalib/LuaState/NativeData;IIII)I
+ * Signature: (JIIII)I
  */
 JNIEXPORT jint JNICALL Java_bma_lua_javalib_LuaState__1apiX
-  (JNIEnv *, jobject, jobject, jint, jint, jint, jint);
+  (JNIEnv *, jobject, jlong, jint, jint, jint, jint);
 
 /*
  * Class:     bma_lua_javalib_LuaState
  * Method:    _xapi
- * Signature: (Lbma/lua/javalib/LuaState/NativeData;ILjava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
+ * Signature: (JILjava/lang/Object;Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;
  */
 JNIEXPORT jobject JNICALL Java_bma_lua_javalib_LuaState__1xapi
-  (JNIEnv *, jobject, jobject, jint, jobject, jobject, jobject);
+  (JNIEnv *, jobject, jlong, jint, jobject, jobject, jobject);
 
 /*
  * Class:     bma_lua_javalib_LuaState
  * Method:    _timeout
- * Signature: (Lbma/lua/javalib/LuaState/NativeData;ZI)V
+ * Signature: (JZI)V
  */
 JNIEXPORT void JNICALL Java_bma_lua_javalib_LuaState__1timeout
-  (JNIEnv *, jobject, jobject, jboolean, jint);
+  (JNIEnv *, jobject, jlong, jboolean, jint);
 
 #ifdef __cplusplus
 }
