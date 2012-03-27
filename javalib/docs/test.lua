@@ -1,0 +1,1 @@
+print("hi,i am in lua,中文");

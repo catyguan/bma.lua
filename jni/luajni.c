@@ -1,17 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
 #include "luajni.h"
 #include "lua.h"
 #include "lualib.h"
 #include "lauxlib.h"
 
 /* Constant that is used to index the JNI Environment */
-#define LUAJAVAJNIENVTAG		"__JAVA_JNIEnv"
+#define LUAJAVA_JNIENV		"__JAVA_JNIEnv"
 /* Defines the lua State Index Property Name */
-#define LUAJAVASTATEINDEX		"__JAVA_StateId"
+#define LUAJAVA_STATEID		"__JAVA_StateId"
 /* Defines the lua JavaObject flag */
-#define LUAJAVAOBJECTIND		"__JAVA_OBJECT"
+#define LUAJAVA_OBJECT			"__JAVA_Object"
 
 static lua_State * getStateFromJObj( JNIEnv * env , jlong cptr );
 
@@ -22,6 +23,7 @@ static JNIEnv * getEnvFromState( lua_State * L );
 static jclass    cls_LuaState				= NULL;
 static jmethodID mid_LuaState__function		= NULL;
 static jmethodID mid_LuaState__loader		= NULL;
+static jmethodID mid_LuaState__error		= NULL;
 
 static jclass    cls_Number					= NULL;
 static jmethodID mid_Number__intValue		= NULL;
@@ -39,6 +41,10 @@ static jmethodID mid_Double__c				= NULL;
 static jclass	 cls_Exception				= NULL;
 static jmethodID mid_Exception__getMessage	= NULL;
 
+static jclass    cls_LuaDebug					= NULL;
+static jmethodID mid_LuaDebug__int				= NULL;
+static jmethodID mid_LuaDebug__str				= NULL;
+
 void initJNICache(JNIEnv* env)
 {
 	if(cls_LuaState)return;
@@ -53,6 +59,7 @@ void initJNICache(JNIEnv* env)
 	cls_LuaState = ( *env )->FindClass( env , "bma/lua/javalib/LuaState" );
 	mid_LuaState__function = ( *env )->GetStaticMethodID( env , cls_LuaState, "c_function" , "(ILjava/lang/Object;)I" );
 	mid_LuaState__loader = ( *env )->GetStaticMethodID( env , cls_LuaState, "c_loader" , "(ILjava/lang/Object;Ljava/lang/Object;Ljava/lang/String;)Ljava/lang/String;" );
+	mid_LuaState__error = ( *env )->GetStaticMethodID( env , cls_LuaState, "c_error" , "(I)I" );
 
 	cls_Exception = ( *env )->FindClass( env , "java/lang/Exception" );
 	mid_Exception__getMessage = ( *env )->GetMethodID( env , cls_Exception, "getMessage" , "()Ljava/lang/String;" );
@@ -63,6 +70,9 @@ void initJNICache(JNIEnv* env)
 	cls_Long = ( *env )->FindClass( env , "java/lang/Long" );
 	mid_Long__c = ( *env )->GetMethodID( env , cls_Long, "<init>" , "(J)V" );
 
+	cls_LuaDebug = ( *env )->FindClass( env , "bma/lua/javalib/LuaDebug" );
+	mid_LuaDebug__int = ( *env )->GetMethodID( env , cls_LuaDebug, "setInt" , "(II)V" );
+	mid_LuaDebug__str = ( *env )->GetMethodID( env , cls_LuaDebug, "setStr" , "(ILjava/lang/String;)V" );
 }
 
 int isJavaObject( lua_State * L , int idx )
@@ -70,7 +80,7 @@ int isJavaObject( lua_State * L , int idx )
 	if ( !lua_isuserdata( L , idx ) )return 0;
 	if ( lua_getmetatable( L , idx ) == 0 )return 0;
 
-	lua_pushstring( L , LUAJAVAOBJECTIND );
+	lua_pushstring( L , LUAJAVA_OBJECT );
 	lua_rawget( L , -2 );
 
 	if (lua_isnil( L, -1 ))
@@ -85,7 +95,7 @@ int isJavaObject( lua_State * L , int idx )
 int getLuaStateId(lua_State* L) {
 	int r = 0;
 
-	lua_pushstring( L , LUAJAVASTATEINDEX );
+	lua_pushstring( L , LUAJAVA_STATEID );
 	lua_rawget( L , LUA_REGISTRYINDEX );
 
 	if ( !lua_isnumber( L , -1 ) )
@@ -107,7 +117,6 @@ int javaInt(JNIEnv* env, jobject p1,int def) {
 int java_function_call( lua_State * L )
 {
 	jobject * obj;
-	jthrowable exp;
 	int ret,stateId;
 	JNIEnv * env;
    
@@ -130,22 +139,6 @@ int java_function_call( lua_State * L )
 	stateId = getLuaStateId( L );
 
 	ret = ( *env )->CallStaticIntMethod( env , cls_LuaState, mid_LuaState__function , stateId , *obj);
-	exp = ( *env )->ExceptionOccurred( env );
-
-	/* Handles exception */
-	if ( exp != NULL )
-	{
-		jobject jstr;
-		const char * str;
-      
-		( *env )->ExceptionClear( env );
-		jstr = ( *env )->CallObjectMethod( env , exp , mid_Exception__getMessage );
-
-		str = ( *env )->GetStringUTFChars( env, jstr , NULL );
-		lua_pushstring( L , str );
-		( *env )->ReleaseStringUTFChars( env, jstr, str );
-		lua_error( L );
-	}
 
 	if(ret==-1) {
 		lua_pushstring( L , "Invalid LuaStateId." );
@@ -155,7 +148,39 @@ int java_function_call( lua_State * L )
 		lua_pushstring( L , "Invalid LuaFunction." );
 		lua_error( L );
 	}
+	if(ret==-3) {
+		lua_error( L );
+	}
 
+	return ret;
+}
+
+int java_function_errhandler(lua_State* L) {
+
+	int ret,stateId;
+	JNIEnv * env;
+   
+	/* Gets the JNI Environment */
+	env = getEnvFromState( L );
+	ret = -1;
+	if ( env != NULL )
+	{
+		stateId = getLuaStateId( L );
+		ret = ( *env )->CallStaticIntMethod( env , cls_LuaState, mid_LuaState__error , stateId );	
+	}
+	if(ret<0) {
+		if(lua_gettop(L)>0) {
+			const char *msg = lua_tostring(L, 1);
+			if (msg) {
+				luaL_traceback(L, L, msg, 1);
+			} else {
+				lua_pushvalue(L,-1);
+			}
+			return 1;
+		}
+		lua_pushliteral(L, "(no error message)");
+		return 1;
+	}
 	return ret;
 }
 
@@ -242,7 +267,7 @@ JNIEnv * getEnvFromState( lua_State * L )
 {
 	JNIEnv ** udEnv;
 
-	lua_pushstring( L , LUAJAVAJNIENVTAG );
+	lua_pushstring( L , LUAJAVA_JNIENV );
 	lua_rawget( L , LUA_REGISTRYINDEX );
 
 	if ( !lua_isuserdata( L , -1 ) )
@@ -268,7 +293,7 @@ void pushJNIEnv( JNIEnv * env , lua_State * L )
 {
 	JNIEnv ** udEnv;
 
-	lua_pushstring( L , LUAJAVAJNIENVTAG );
+	lua_pushstring( L , LUAJAVA_JNIENV );
 	lua_rawget( L , LUA_REGISTRYINDEX );
 
 	if ( !lua_isnil( L , -1 ) )
@@ -283,7 +308,7 @@ void pushJNIEnv( JNIEnv * env , lua_State * L )
 		udEnv = ( JNIEnv ** ) lua_newuserdata( L , sizeof( JNIEnv * ) );
 		*udEnv = env;
 
-		lua_pushstring( L , LUAJAVAJNIENVTAG );
+		lua_pushstring( L , LUAJAVA_JNIENV );
 		lua_insert( L , -2 );
 		lua_rawset( L , LUA_REGISTRYINDEX );
 	}
@@ -314,6 +339,61 @@ static void clockHook(lua_State *L, lua_Debug *ar) {
 		lua_sethook(L,clockHook,LUA_MASKCOUNT,1);
 		luaL_error(L,"execute timeout in %f seconds",(lua_Number)(sp/1000));
 	}
+}
+
+JNIEXPORT jobject JNICALL Java_bma_lua_javalib_LuaState__1getDebug
+  (JNIEnv * env, jobject jThis, jlong jobj, jstring what, jint level)
+{
+	jobject obj;
+	lua_Debug debug;
+	lua_State* L = getStateFromJObj( env , jobj);	
+	
+	memset(&debug,0,sizeof(debug));
+	if(!lua_getstack(L,level,&debug)) {
+		return NULL;
+	}
+	if(what!=NULL) {
+		const char* k = ( *env )->GetStringUTFChars( env, what , NULL );
+		lua_getinfo( L ,k, &debug);
+		( *env )->ReleaseStringUTFChars( env , what, k );
+	}
+
+	
+	obj = ( *env )->AllocObject(env,cls_LuaDebug);
+	if(obj==NULL) {
+		return NULL;
+	}
+
+	( *env )->CallVoidMethod(env,obj,mid_LuaDebug__int,1,debug.event);
+	( *env )->CallVoidMethod(env,obj,mid_LuaDebug__int,6,debug.currentline);
+	( *env )->CallVoidMethod(env,obj,mid_LuaDebug__int,7,debug.linedefined);
+	( *env )->CallVoidMethod(env,obj,mid_LuaDebug__int,8,debug.lastlinedefined);
+	( *env )->CallVoidMethod(env,obj,mid_LuaDebug__int,9,debug.nups);
+	( *env )->CallVoidMethod(env,obj,mid_LuaDebug__int,10,debug.nparams);
+	( *env )->CallVoidMethod(env,obj,mid_LuaDebug__int,11,debug.isvararg);
+	( *env )->CallVoidMethod(env,obj,mid_LuaDebug__int,12,debug.istailcall);
+	if(debug.name) {
+		( *env )->CallVoidMethod(env,obj,mid_LuaDebug__str,2,
+			 ( *env )->NewStringUTF( env , debug.name));		
+	}
+	if(debug.namewhat) {
+		( *env )->CallVoidMethod(env,obj,mid_LuaDebug__str,3,
+			 ( *env )->NewStringUTF( env , debug.namewhat));		
+	}
+	if(debug.what) {
+		( *env )->CallVoidMethod(env,obj,mid_LuaDebug__str,4,
+			 ( *env )->NewStringUTF( env , debug.what));		
+	}
+	if(debug.source) {
+		( *env )->CallVoidMethod(env,obj,mid_LuaDebug__str,5,
+			 ( *env )->NewStringUTF( env , debug.source));
+	}
+	if(debug.short_src) {
+		( *env )->CallVoidMethod(env,obj,mid_LuaDebug__str,13,
+			 ( *env )->NewStringUTF( env , debug.short_src));		
+	}
+
+	return obj;
 }
 
 JNIEXPORT void JNICALL Java_bma_lua_javalib_LuaState__1timeout
@@ -347,7 +427,7 @@ JNIEXPORT jlong JNICALL Java_bma_lua_javalib_LuaState__1open
 	initJNICache(env);
 	L = luaL_newstate();
  
-	lua_pushstring( L , LUAJAVASTATEINDEX );
+	lua_pushstring( L , LUAJAVA_STATEID );
 	lua_pushnumber( L , (lua_Number)stateId );
 	lua_settable( L , LUA_REGISTRYINDEX );
 
@@ -374,6 +454,22 @@ JNIEXPORT void JNICALL Java_bma_lua_javalib_LuaState__1close
 	lua_State * L = getStateFromJObj( env , cptr );
 
 	lua_close( L );
+}
+
+JNIEXPORT void JNICALL Java_bma_lua_javalib_LuaState__1writeData
+  (JNIEnv * env, jobject jThis, jlong userdata, jint dataPos, jbyteArray buf, jint bufPos, jint size)
+{
+	jbyte * ptr = ( *env)->GetByteArrayElements(env,buf,0);
+	memcpy(((jbyte*)userdata)+dataPos,ptr+bufPos,size);
+}
+
+JNIEXPORT jbyteArray JNICALL Java_bma_lua_javalib_LuaState__1readData
+  (JNIEnv * env, jobject jThis, jlong userdata, jint pos, jint size)
+{
+	jbyteArray r;
+	r = (*env)->NewByteArray(env,size);
+	(*env)->SetByteArrayRegion(env, r, pos, size, (const jbyte*) userdata);
+	return r; 
 }
 
 JNIEXPORT jint JNICALL Java_bma_lua_javalib_LuaState__1apiX
@@ -433,7 +529,15 @@ JNIEXPORT jint JNICALL Java_bma_lua_javalib_LuaState__1apiX
 	case 22:
 		return lua_next(L,p1);
 	case 23:
-		return lua_pcall(L,p1,p2,p3);
+		{
+			int r = 0;
+			int base = lua_gettop(L) - p1;  /* function index */
+			lua_pushcfunction(L, &java_function_errhandler);  /* push traceback function */
+			lua_insert(L, base);
+			r = lua_pcall(L,p1,p2,base);
+			lua_remove(L, base);
+			return r;
+		}
 	case 24:
 		lua_pop(L,p1);
 		return 0;
@@ -610,7 +714,7 @@ JNIEXPORT jobject JNICALL Java_bma_lua_javalib_LuaState__1xapi
 			lua_pushcfunction( L , &java_function_gc );
 			lua_rawset( L , -3 );
 
-			lua_pushstring( L , LUAJAVAOBJECTIND );
+			lua_pushstring( L , LUAJAVA_OBJECT );
 			lua_pushboolean( L , 1 );
 			lua_rawset( L , -3 );
 
@@ -647,6 +751,7 @@ JNIEXPORT jobject JNICALL Java_bma_lua_javalib_LuaState__1xapi
 			return ( *env) ->NewObject(env,cls_Integer,mid_Integer__c,(jint) r);
 		}
 	default:
+		// luaL_argcheck
 		return NULL;
 	}
 }

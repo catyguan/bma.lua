@@ -312,10 +312,6 @@
 				>
 			</File>
 			<File
-				RelativePath="..\lua-5.2.0\luac.c"
-				>
-			</File>
-			<File
 				RelativePath="..\jni\luajni.c"
 				>
 			</File>

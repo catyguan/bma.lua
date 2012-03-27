@@ -49,11 +49,35 @@ JNIEXPORT jobject JNICALL Java_bma_lua_javalib_LuaState__1xapi
 
 /*
  * Class:     bma_lua_javalib_LuaState
+ * Method:    _getDebug
+ * Signature: (JLjava/lang/String;I)Lbma/lua/javalib/LuaDebug;
+ */
+JNIEXPORT jobject JNICALL Java_bma_lua_javalib_LuaState__1getDebug
+  (JNIEnv *, jobject, jlong, jstring, jint);
+
+/*
+ * Class:     bma_lua_javalib_LuaState
  * Method:    _timeout
  * Signature: (JZI)V
  */
 JNIEXPORT void JNICALL Java_bma_lua_javalib_LuaState__1timeout
   (JNIEnv *, jobject, jlong, jboolean, jint);
+
+/*
+ * Class:     bma_lua_javalib_LuaState
+ * Method:    _writeData
+ * Signature: (J[BII)V
+ */
+JNIEXPORT void JNICALL Java_bma_lua_javalib_LuaState__1writeData
+  (JNIEnv *, jobject, jlong, jint, jbyteArray, jint, jint);
+
+/*
+ * Class:     bma_lua_javalib_LuaState
+ * Method:    _readData
+ * Signature: (JII)[B
+ */
+JNIEXPORT jbyteArray JNICALL Java_bma_lua_javalib_LuaState__1readData
+  (JNIEnv *, jobject, jlong, jint, jint);
 
 #ifdef __cplusplus
 }

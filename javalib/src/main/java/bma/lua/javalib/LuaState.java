@@ -24,9 +24,6 @@
 
 package bma.lua.javalib;
 
-import java.io.PrintWriter;
-import java.io.StringWriter;
-
 /**
  * 对应Lua_State对象
  * 
@@ -56,25 +53,44 @@ public class LuaState implements LuaConst {
 	private native Object _xapi(long luaState, int api, Object p1, Object p2,
 			Object p3);
 
+	private native LuaDebug _getDebug(long luaState, String types,
+			int stackLevel);
+
 	private native void _timeout(long luaState, boolean begin, int timeoutSec);
 
+	private native void _writeData(long data, int dataPos, byte[] buf,
+			int bufBos, int size);
+
+	private native byte[] _readData(long data, int pos, int size);
+
 	private static int c_function(int stateId, Object obj) {
-		try {
-			LuaState L = LuaStateManager.getState(stateId);
-			if (L == null) {
-				return -1;
-			}
-			if (obj instanceof LuaFunction) {
-				LuaFunction f = (LuaFunction) obj;
+		LuaState L = LuaStateManager.getState(stateId);
+		if (L == null) {
+			return -1;
+		}
+
+		if (obj instanceof LuaFunction) {
+			LuaFunction f = (LuaFunction) obj;
+			try {
 				return f.execute(L);
+			} catch (Exception e) {
+				L.errorHandler.handleJavaException(L, e);
+				return -3;
 			}
-			return -2;
-		} catch (Exception e) {
-			StringWriter r = new StringWriter(1024);
-			PrintWriter w = new PrintWriter(r);
-			e.printStackTrace(w);
-			w.close();
-			throw new RuntimeException(r.toString());
+		}
+		return -2;
+	}
+
+	private static int c_error(int stateId) {
+		LuaState L = LuaStateManager.getState(stateId);
+		if (L == null) {
+			return -1;
+		}
+
+		try {
+			return L.errorHandler.buildLuaError(L);
+		} catch (Throwable e) {
+			return -1;
 		}
 	}
 
@@ -102,6 +118,8 @@ public class LuaState implements LuaConst {
 
 	private int stateId;
 
+	private LuaErrorHandler errorHandler = LuaErrorHandlerDefault.INSTANCE;
+
 	/**
 	 * Constructor to instance a new LuaState and initialize it with LuaJava's
 	 * functions
@@ -111,6 +129,14 @@ public class LuaState implements LuaConst {
 	protected LuaState(int stateId) {
 		luaState = _open(stateId);
 		this.stateId = stateId;
+	}
+
+	public LuaErrorHandler getErrorHandler() {
+		return errorHandler;
+	}
+
+	public void setErrorHandler(LuaErrorHandler errorHandler) {
+		this.errorHandler = errorHandler;
 	}
 
 	/**
@@ -169,8 +195,8 @@ public class LuaState implements LuaConst {
 		_apiX(luaState, 2, 6, 0, 0);
 	}
 
-	public void luaCall(int nargs, int nresult) {
-		_apiX(luaState, 3, nargs, nresult, 0);
+	public void luaCall(int nargs, int nresults) throws LuaException {
+		luaPcall(nargs, nresults);
 	}
 
 	public boolean luaCheckStack(int extra) {
@@ -299,8 +325,16 @@ public class LuaState implements LuaConst {
 		return _apiX(luaState, 22, index, 0, 0);
 	}
 
-	public int luaPcall(int nargs, int nresults, int msgh) {
-		return _apiX(luaState, 23, nargs, nresults, msgh);
+	public int luaPcall(int nargs, int nresults) throws LuaException {
+		int r = _apiX(luaState, 23, nargs, nresults, 0);
+		if (r != LUA_OK) {
+			LuaException e = this.errorHandler.handleLuaError(this,
+					LuaErrorHandler.ERR_TYPE_CALL, r);
+			if (e != null) {
+				throw e;
+			}
+		}
+		return r;
 	}
 
 	public void luaPop(int n) {
@@ -479,6 +513,18 @@ public class LuaState implements LuaConst {
 	}
 
 	// 4.9 – The Debug Interface
+	public LuaDebug getDebug(String types, int stackLevel) {
+		if (types != null) {
+			types = types.replaceAll("\\*", "nSltu");
+		}
+		if (stackLevel < 0)
+			stackLevel = 0;
+		return _getDebug(luaState, types, stackLevel);
+	}
+
+	public void setExecuteTimeout(boolean begin, int timeoutSec) {
+		_timeout(luaState, begin, timeoutSec);
+	}
 
 	// 5 – The Auxiliary Library
 	public void luaLOpenlibs() {
@@ -499,7 +545,18 @@ public class LuaState implements LuaConst {
 	}
 
 	// helper
-	public void setExecuteTimeout(boolean begin, int timeoutSec) {
-		_timeout(luaState, begin, timeoutSec);
+
+	public void luaRegister(String name, LuaFunction f) {
+		luaPushFunction(f);
+		luaSetglobal(name);
+	}
+
+	public void setUserData(long userData, int dataPos, byte[] buf, int bufPos,
+			int size) {
+		_writeData(userData, dataPos, buf, bufPos, size);
+	}
+
+	public byte[] getUserData(long userData, int pos, int size) {
+		return _readData(userData, pos, size);
 	}
 }
